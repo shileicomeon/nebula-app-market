@@ -1586,11 +1586,64 @@ class SummaryCard extends StatelessWidget {
 }
 
 class DownloadTask {
-  DownloadTask(this.app, this.progress, this.paused);
+  DownloadTask(this.app, this.progress, this.paused,
+      {this.id = 0, this.status = 'downloading'});
 
   final StoreApp app;
   final double progress;
   bool paused;
+  final int id;
+  String status;
+
+  String get statusText {
+    if (progress >= 1) return status == 'installing' ? '正在安装' : '下载完成，可安装';
+    if (paused) return '已暂停 · ${(progress * 100).round()}%';
+    return '下载中 · ${(progress * 100).round()}%';
+  }
+
+  factory DownloadTask.fromJson(Map<String, dynamic> json) {
+    return DownloadTask(
+      StoreApp.fromJson(json['app'] as Map<String, dynamic>? ?? const {}),
+      (json['progress'] as num? ?? 0).toDouble(),
+      json['paused'] as bool? ?? false,
+      id: json['id'] as int? ?? 0,
+      status: json['status'] as String? ?? 'downloading',
+    );
+  }
+}
+
+class UserSettings {
+  const UserSettings(
+      {required this.autoUpdate,
+      required this.wifiOnly,
+      required this.notifications});
+
+  final bool autoUpdate;
+  final bool wifiOnly;
+  final bool notifications;
+
+  UserSettings copyWith(
+      {bool? autoUpdate, bool? wifiOnly, bool? notifications}) {
+    return UserSettings(
+      autoUpdate: autoUpdate ?? this.autoUpdate,
+      wifiOnly: wifiOnly ?? this.wifiOnly,
+      notifications: notifications ?? this.notifications,
+    );
+  }
+
+  factory UserSettings.fromJson(Map<String, dynamic> json) {
+    return UserSettings(
+      autoUpdate: json['auto_update'] as bool? ?? true,
+      wifiOnly: json['wifi_only'] as bool? ?? true,
+      notifications: json['notifications'] as bool? ?? true,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'auto_update': autoUpdate,
+        'wifi_only': wifiOnly,
+        'notifications': notifications,
+      };
 }
 
 String valueText(bool enabled) => enabled ? '允许，点击可关闭' : '未开启，点击可授权';
@@ -1622,10 +1675,19 @@ void showLoginSheet(BuildContext context) {
           SizedBox(
             width: double.infinity,
             child: FilledButton(
-              onPressed: () {
+              onPressed: () async {
+                final phone = controller.text.trim();
+                if (phone.isEmpty) {
+                  showAppSnack(context, '请先输入手机号');
+                  return;
+                }
                 Navigator.of(sheetContext).pop();
-                showAppSnack(context,
-                    controller.text.trim().isEmpty ? '请先输入手机号' : '验证码已发送');
+                try {
+                  await AppStoreApi().login(phone);
+                  if (context.mounted) showAppSnack(context, '登录成功，数据已同步到后端');
+                } catch (_) {
+                  if (context.mounted) showAppSnack(context, '验证码已发送（离线演示）');
+                }
               },
               child: const Text('获取验证码'),
             ),
@@ -2247,16 +2309,78 @@ class AppStoreApi {
   final String baseUrl;
 
   Future<List<StoreApp>> fetchApps() async {
+    final jsonBody = await _getMap('/api/apps');
+    return _appsFrom(jsonBody);
+  }
+
+  Future<List<StoreApp>> fetchUpdates() async {
+    final jsonBody = await _getMap('/api/me/updates');
+    return _appsFrom(jsonBody);
+  }
+
+  Future<List<StoreApp>> fetchRelation(String relation) async {
+    final jsonBody = await _getMap('/api/me/$relation');
+    return _appsFrom(jsonBody);
+  }
+
+  Future<void> deleteRelation(String relation, int appId) async {
+    await _send('/api/me/$relation/$appId', method: 'DELETE');
+  }
+
+  Future<UserSettings> fetchSettings() async {
+    return UserSettings.fromJson(await _getMap('/api/me/settings'));
+  }
+
+  Future<void> updateSettings(UserSettings settings) async {
+    await _send('/api/me/settings', method: 'PUT', body: settings.toJson());
+  }
+
+  Future<List<DownloadTask>> fetchDownloads() async {
+    final jsonBody = await _getMap('/api/me/downloads');
+    return (jsonBody['downloads'] as List? ?? const [])
+        .map((item) => DownloadTask.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> toggleDownload(int id) async {
+    await _send('/api/me/downloads', method: 'POST', body: {'id': id});
+  }
+
+  Future<void> createDownload(int appId) async {
+    await _send('/api/me/downloads', method: 'POST', body: {'app_id': appId});
+  }
+
+  Future<Map<String, dynamic>> login(String phone) async {
+    return _send('/api/auth/login', method: 'POST', body: {'phone': phone});
+  }
+
+  List<StoreApp> _appsFrom(Map<String, dynamic> jsonBody) {
+    return (jsonBody['apps'] as List? ?? const [])
+        .map((item) => StoreApp.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> _getMap(String path) {
+    return _send(path, method: 'GET');
+  }
+
+  Future<Map<String, dynamic>> _send(
+    String path, {
+    required String method,
+    Map<String, dynamic>? body,
+  }) async {
     final client = HttpClient();
     try {
-      final request = await client.getUrl(Uri.parse('$baseUrl/api/apps'));
+      final request = await client.openUrl(method, Uri.parse('$baseUrl$path'));
+      request.headers.contentType = ContentType.json;
+      if (body != null) request.write(jsonEncode(body));
       final response = await request.close();
-      if (response.statusCode != HttpStatus.ok) return const [];
-      final body = await utf8.decodeStream(response);
-      final jsonBody = jsonDecode(body) as Map<String, dynamic>;
-      return (jsonBody['apps'] as List)
-          .map((item) => StoreApp.fromJson(item as Map<String, dynamic>))
-          .toList();
+      final text = await utf8.decodeStream(response);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException(text, uri: Uri.parse('$baseUrl$path'));
+      }
+      if (text.trim().isEmpty) return const {};
+      return jsonDecode(text) as Map<String, dynamic>;
     } finally {
       client.close(force: true);
     }

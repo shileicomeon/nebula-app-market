@@ -7,7 +7,7 @@
 - 精致的应用商店 UI：首页、分类、排行、详情、我的页面完整可交互
 - 固定搜索栏、分类筛选、榜单切换、应用详情、截图预览
 - 用户中心原型：登录弹窗、应用更新、下载管理、隐私权限、收藏预约、设置
-- Go 后端提供应用列表、搜索、分类、排行、详情等只读 API
+- Go 后端使用 SQLite 持久化，提供应用、用户、收藏、预约、设置、下载等 API
 - Android 已设置正式应用名、包名和自定义启动图标
 
 ## 正式命名
@@ -37,12 +37,21 @@ go run .
 默认监听 `http://127.0.0.1:8080`，主要接口：
 
 - `GET /api/health`
+- `POST /api/auth/login`
+- `GET /api/me`
+- `GET/PUT /api/me/settings`
+- `GET/POST /api/me/favorites`
+- `DELETE /api/me/favorites/{app_id}`
+- `GET/POST /api/me/reservations`
+- `DELETE /api/me/reservations/{app_id}`
+- `GET /api/me/updates`
+- `GET/POST /api/me/downloads`
 - `GET /api/apps`
 - `GET /api/apps?q=英语`
 - `GET /api/apps?category=工具`
-- `GET /api/apps/{应用名}`
+- `GET /api/apps/{应用名或ID}`
 - `GET /api/categories`
-- `GET /api/rankings?type=popular|rating|new`
+- `GET /api/rankings?type=popular|rating|new|rising|game`
 
 ## 启动 Android 客户端
 
@@ -77,9 +86,23 @@ mobile/build/app/outputs/flutter-apk/app-debug.apk
 
 ## 后续可完善
 
-- SQLite/PostgreSQL 数据库持久化
 - 手机号验证码登录、Token、用户信息接口
-- 收藏/预约/设置同步到后端
-- 下载任务、更新任务真实接口
 - APK 下载地址、包名、签名、SHA256、安全检测报告
 - 评论评分、版本历史、权限清单、开发者后台
+
+
+## SQLite 数据库
+
+后端默认使用系统 `sqlite3` 命令创建本地数据库：
+
+```text
+server/data/nebula_app_market.db
+```
+
+可以通过环境变量修改路径：
+
+```bash
+NEBULA_DB_PATH=/tmp/nebula.db go run .
+```
+
+数据库文件已加入 `.gitignore`，不会提交到 GitHub。

@@ -30,3 +30,9 @@ server/coverage.out
 # Logs / temp
 *.log
 /tmp/
+
+# Local SQLite data
+server/data/
+*.db
+*.db-wal
+*.db-shm
