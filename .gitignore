@@ -1,0 +1,32 @@
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Flutter / Dart
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.packages
+mobile/build/
+mobile/coverage/
+
+# Android / Gradle
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/android/local.properties
+*.jks
+*.keystore
+key.properties
+
+# Go
+server/bin/
+server/*.test
+server/coverage.out
+
+# Logs / temp
+*.log
+/tmp/
